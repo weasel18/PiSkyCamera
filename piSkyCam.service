@@ -1,0 +1,19 @@
+[Unit]
+Description=piSkyCam – ONVIF astrophotography camera service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=weasel
+Group=video
+WorkingDirectory=/home/weasel/piSkyCamera
+ExecStart=/usr/bin/python3 /home/weasel/piSkyCamera/main.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

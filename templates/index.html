@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>piSkyCam</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span class="logo">&#9733; piSkyCam</span>
+    </div>
+    <div class="header-right">
+      <span class="status-dot" id="cam-dot" title="Camera"></span>
+      <span class="status-label" id="status-label">Connecting…</span>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <!-- ── Controls panel ── -->
+    <aside class="controls">
+
+      <section>
+        <h2>Presets</h2>
+        <div class="preset-grid">
+          <button class="preset-btn" onclick="applyPreset('day')">Day Auto</button>
+          <button class="preset-btn" onclick="applyPreset('night')">Night Auto</button>
+          <button class="preset-btn" onclick="applyPreset('planets')">Planets</button>
+          <button class="preset-btn" onclick="applyPreset('deepsky')">Deep Sky</button>
+          <button class="preset-btn" onclick="applyPreset('trails')">Star Trails</button>
+          <button class="preset-btn" onclick="applyPreset('longexp')">Long Exp 120s</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Exposure</h2>
+        <div class="row">
+          <label>Mode</label>
+          <div class="toggle-group">
+            <button id="btn-ae-auto"  class="toggle-btn active" onclick="setExposureMode('auto')">Auto</button>
+            <button id="btn-ae-manual" class="toggle-btn"       onclick="setExposureMode('manual')">Manual</button>
+          </div>
+        </div>
+        <div id="manual-exp-section">
+          <div class="row">
+            <label>Speed</label>
+            <div class="shutter-ctrl">
+              <button class="step-btn" onclick="stepExposure(-1)" title="Slower (more light)">&#9664;</button>
+              <input type="range" id="exp-slider" class="slider"
+                     min="0" max="63" step="1"
+                     oninput="onExpSlider(this.value)">
+              <button class="step-btn" onclick="stepExposure(1)" title="Faster (less light)">&#9654;</button>
+              <span class="val-label" id="exp-display">1/250</span>
+            </div>
+          </div>
+          <div class="row">
+            <label>Gain</label>
+            <input type="range" id="gain-slider" class="slider"
+                   min="1" max="16" step="0.1"
+                   oninput="onGainSlider(this.value)">
+            <span class="val-label" id="gain-display">1.0×</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>White Balance</h2>
+        <div class="row">
+          <label>Mode</label>
+          <div class="toggle-group">
+            <button id="btn-wb-auto"   class="toggle-btn active" onclick="setWbMode('auto')">Auto</button>
+            <button id="btn-wb-manual" class="toggle-btn"        onclick="setWbMode('manual')">Manual</button>
+          </div>
+        </div>
+        <div id="manual-wb-section">
+          <div class="row">
+            <label class="red-label">Red</label>
+            <input type="range" id="r-gain" class="slider slider-red"
+                   min="0.5" max="4.0" step="0.05"
+                   oninput="onColorSlider('colour_gain_r', this.value, 'r-display')">
+            <span class="val-label" id="r-display">2.0</span>
+          </div>
+          <div class="row">
+            <label class="blue-label">Blue</label>
+            <input type="range" id="b-gain" class="slider slider-blue"
+                   min="0.5" max="4.0" step="0.05"
+                   oninput="onColorSlider('colour_gain_b', this.value, 'b-display')">
+            <span class="val-label" id="b-display">1.5</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Image</h2>
+        <div class="row">
+          <label>Noise Reduc.</label>
+          <select id="nr-mode" onchange="onNrMode(this.value)">
+            <option value="0">Off (astrophotography)</option>
+            <option value="3">Minimal</option>
+            <option value="1">Fast</option>
+            <option value="2">High Quality</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Brightness</label>
+          <input type="range" id="brightness" class="slider"
+                 min="-1" max="1" step="0.05"
+                 oninput="onImgSlider('brightness', this.value, 'br-display')">
+          <span class="val-label" id="br-display">0.0</span>
+        </div>
+        <div class="row">
+          <label>Contrast</label>
+          <input type="range" id="contrast" class="slider"
+                 min="0" max="3" step="0.05"
+                 oninput="onImgSlider('contrast', this.value, 'ct-display')">
+          <span class="val-label" id="ct-display">1.0</span>
+        </div>
+        <div class="row">
+          <label>Saturation</label>
+          <input type="range" id="saturation" class="slider"
+                 min="0" max="2" step="0.05"
+                 oninput="onImgSlider('saturation', this.value, 'sat-display')">
+          <span class="val-label" id="sat-display">1.0</span>
+        </div>
+        <div class="row">
+          <label>Sharpness</label>
+          <input type="range" id="sharpness" class="slider"
+                 min="0" max="2" step="0.05"
+                 oninput="onImgSlider('sharpness', this.value, 'sh-display')">
+          <span class="val-label" id="sh-display">1.0</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Stream</h2>
+        <div class="row">
+          <label>Stream Res</label>
+          <select id="resolution-select" onchange="onResolutionChange(this.value)">
+            <option value="3840x2160" selected>3840×2160 (4K)</option>
+            <option value="2560x1440">2560×1440 (2K)</option>
+            <option value="1920x1080">1920×1080 (FHD)</option>
+            <option value="1280x720">1280×720 (HD)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Stream FPS</label>
+          <input type="range" id="fps-slider" class="slider"
+                 min="1" max="10" step="1"
+                 oninput="onFpsSlider(this.value)">
+          <span class="val-label" id="fps-display">10</span>
+        </div>
+        <div class="row toggle-row">
+          <label>Flip H</label>
+          <input type="checkbox" id="hflip" onchange="onFlip()">
+          <label>Flip V</label>
+          <input type="checkbox" id="vflip" onchange="onFlip()">
+        </div>
+      </section>
+
+      <section>
+        <h2>Lens</h2>
+        <div class="row">
+          <label>Type</label>
+          <div class="toggle-group" style="flex:1">
+            <button id="btn-fisheye-off" class="toggle-btn active" onclick="setFisheye(false)">Normal</button>
+            <button id="btn-fisheye-on"  class="toggle-btn"        onclick="setFisheye(true)">180° Fisheye</button>
+          </div>
+        </div>
+        <div id="fisheye-opts" style="opacity:0.4">
+          <div class="row">
+            <label>FOV (°)</label>
+            <input type="number" id="fisheye-fov" class="coord-input"
+                   min="120" max="220" step="1" value="180"
+                   onchange="queueSetting('fisheye_fov', parseInt(this.value))">
+          </div>
+          <p class="hint">Adds ONVIF fisheye metadata. NVR dewarping support varies by vendor.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Schedule</h2>
+        <div class="row">
+          <label>Auto</label>
+          <div class="toggle-group" style="flex:1">
+            <button id="btn-sched-off" class="toggle-btn active" onclick="setSchedEnabled(false)">Off</button>
+            <button id="btn-sched-on"  class="toggle-btn"        onclick="setSchedEnabled(true)">Sunrise/Sunset</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>Latitude</label>
+          <input type="number" id="sched-lat" class="coord-input"
+                 min="-90" max="90" step="0.0001" placeholder="e.g. 51.5"
+                 onchange="onLocation()">
+          <span class="val-label" style="width:auto">°N</span>
+        </div>
+        <div class="row">
+          <label>Longitude</label>
+          <input type="number" id="sched-lon" class="coord-input"
+                 min="-180" max="180" step="0.0001" placeholder="e.g. -0.1"
+                 onchange="onLocation()">
+          <span class="val-label" style="width:auto">°E</span>
+        </div>
+        <div class="row">
+          <label>Day preset</label>
+          <select id="day-preset-sel" onchange="onSchedPreset('day', this.value)"></select>
+        </div>
+        <div class="row">
+          <label>Night preset</label>
+          <select id="night-preset-sel" onchange="onSchedPreset('night', this.value)"></select>
+        </div>
+        <div class="row">
+          <label>Sunset +</label>
+          <input type="number" id="sched-sunset-off" class="coord-input"
+                 min="-120" max="120" step="5" value="30"
+                 onchange="onSchedOffset('sunset', this.value)">
+          <span class="val-label" style="width:auto">min</span>
+        </div>
+        <div class="row">
+          <label>Sunrise −</label>
+          <input type="number" id="sched-sunrise-off" class="coord-input"
+                 min="-120" max="120" step="5" value="30"
+                 onchange="onSchedOffset('sunrise', this.value)">
+          <span class="val-label" style="width:auto">min</span>
+        </div>
+        <div class="schedule-status" id="sched-status">—</div>
+        <div class="override-btns">
+          <button class="preset-btn" onclick="setOverride(1)">+1h</button>
+          <button class="preset-btn" onclick="setOverride(4)">+4h</button>
+          <button class="preset-btn" onclick="setOverride(12)">+12h</button>
+          <button class="preset-btn" onclick="setOverrideUntilSunrise()">→ Sunrise</button>
+          <button class="preset-btn override-clear" onclick="clearOverride()">Clear Override</button>
+        </div>
+      </section>
+
+      <section class="info-section">
+        <h2>System</h2>
+        <div class="info-row"><span class="info-key">CPU Temp</span><code id="stat-temp">—</code></div>
+        <div class="info-row"><span class="info-key">Load</span><code id="stat-load">—</code></div>
+        <div class="info-row"><span class="info-key">Memory</span><code id="stat-mem">—</code></div>
+        <div class="info-row"><span class="info-key">Disk</span><code id="stat-disk">—</code></div>
+        <div class="info-row"><span class="info-key">Uptime</span><code id="stat-uptime">—</code></div>
+        <div class="info-row" id="stat-throttle-row" style="display:none">
+          <span class="info-key warn">Throttle</span><code id="stat-throttle" class="warn">—</code>
+        </div>
+      </section>
+
+      <section class="info-section">
+        <h2>Network</h2>
+        <div class="info-row"><span class="info-key">RTSP Main</span><code id="rtsp-url">—</code></div>
+        <div class="info-row"><span class="info-key">RTSP Sub</span><code id="rtsp-sub-url">—</code></div>
+        <div class="info-row"><span class="info-key">ONVIF</span><code id="onvif-url">—</code></div>
+        <div class="info-row"><span class="info-key">Snapshot</span><code id="snap-url">—</code></div>
+      </section>
+
+    </aside>
+
+    <!-- ── Preview panel ── -->
+    <main class="preview-panel">
+      <div class="preview-container">
+        <img id="preview" src="/snapshot.jpg" alt="Camera feed" draggable="false">
+        <div class="preview-overlay">
+          <div class="overlay-left">
+            <span id="meta-exp">—</span>
+            <span id="meta-gain">—</span>
+            <span id="meta-lux">—</span>
+          </div>
+          <div class="overlay-right">
+            <span id="frame-time">—</span>
+          </div>
+        </div>
+        <div class="capture-bar" id="capture-bar">
+          <div class="capture-progress" id="capture-progress"></div>
+          <span id="capture-label">Waiting…</span>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

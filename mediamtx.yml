@@ -1,0 +1,18 @@
+###############################################################################
+# MediaMTX config for piSkyCam
+# FFmpeg publishes to rtsp://localhost:8554/main  (main stream)
+#                and rtsp://localhost:8554/sub    (sub stream)
+# NVR clients read from rtsp://<pi-ip>:8554/main and /sub
+###############################################################################
+
+logLevel: error
+logDestinations: [stdout]
+
+rtsp: yes
+rtspAddress: :8554
+
+paths:
+  main:
+    source: publisher
+  sub:
+    source: publisher
