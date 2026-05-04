@@ -402,6 +402,19 @@ code {
   padding-left: 88px;
 }
 
+/* ── Live WB readout ── */
+.wb-live {
+  flex: 1;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text-bright);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  text-align: center;
+}
+
 /* ── Warn color ── */
 .warn { color: #e05050 !important; }
 

@@ -648,7 +648,7 @@ def post_settings():
         return jsonify({"error": "no data"}), 400
 
     ALLOWED = {
-        "exposure_mode", "exposure_time", "analogue_gain",
+        "exposure_mode", "exposure_time", "analogue_gain", "exposure_value",
         "awb_mode", "colour_gain_r", "colour_gain_b",
         "noise_reduction_mode",
         "brightness", "contrast", "saturation", "sharpness",

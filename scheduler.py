@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 # ── Preset data (mirrors JS PRESETS) ─────────────────────────────────────────
 
 PRESETS = {
-    "day":     {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 30,
-                "analogue_gain": 1.0,  "noise_reduction_mode": 2},
+    "day":     {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 10,
+                "analogue_gain": 1.0,  "noise_reduction_mode": 2,  "exposure_value": 0.0},
     "night":   {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 5,
-                "analogue_gain": 4.0,  "noise_reduction_mode": 1},
-    "planets": {"exposure_mode": "manual", "awb_mode": "auto",   "stream_fps": 15,
+                "analogue_gain": 4.0,  "noise_reduction_mode": 1,  "exposure_value": 0.0},
+    "planets": {"exposure_mode": "manual", "awb_mode": "auto",   "stream_fps": 10,
                 "analogue_gain": 4.0,  "noise_reduction_mode": 0,
                 "exposure_time": 50_000, "colour_gain_r": 2.0, "colour_gain_b": 1.5},
     "deepsky": {"exposure_mode": "manual", "awb_mode": "manual", "stream_fps": 1,
@@ -195,7 +195,14 @@ class Scheduler:
         if period == self._last_period:
             return
 
+        first_tick = self._last_period is None
         self._last_period = period
+        if first_tick:
+            # Just woke up — record the current period without applying a preset
+            # so we don't clobber manually set settings on every restart.
+            logger.info("Schedule: initialized in %s period (no preset applied)", period)
+            return
+
         preset_key = "schedule_night_preset" if period == "night" else "schedule_day_preset"
         preset_name = cfg.get(preset_key, "deepsky" if period == "night" else "day")
         preset_data = PRESETS.get(preset_name)

@@ -7,6 +7,7 @@ CONFIG_FILE = os.path.join(os.path.dirname(__file__), "camera_settings.json")
 DEFAULTS = {
     "exposure_mode": "auto",
     "exposure_time": 100_000,       # microseconds (100ms)
+    "exposure_value": 0.0,          # EV offset for auto mode (-3 to +3 stops)
     "analogue_gain": 1.0,
     "awb_mode": "auto",
     "colour_gain_r": 2.0,

@@ -89,6 +89,8 @@ class CameraService:
             # Fix gain at the configured value; on libcamera ≥0.2 this makes AE
             # control only shutter (shutter-priority). Day preset uses 1.0.
             controls["AnalogueGain"] = float(cfg.get("analogue_gain", 1.0))
+            # EV compensation: shifts the AE target up/down in stops.
+            controls["ExposureValue"] = float(cfg.get("exposure_value", 0.0))
 
         if cfg["awb_mode"] == "manual":
             controls["AwbEnable"] = False
@@ -147,22 +149,6 @@ class CameraService:
 
             picam2.start()
             time.sleep(1.5)  # sensor warmup
-
-            # ScalerCrop uses full-array coordinates. PixelArrayActiveAreas
-            # gives the active region's offset within the full array, which is
-            # the correct rectangle to pass. Fallback to PixelArraySize if the
-            # property is absent (older libcamera builds).
-            active = picam2.camera_properties.get('PixelArrayActiveAreas')
-            if active:
-                crop = active[0]  # (x, y, w, h) in full-array coords
-                logger.info("Sensor active area: %s", crop)
-                picam2.set_controls({"ScalerCrop": crop})
-            else:
-                arr = picam2.camera_properties['PixelArraySize']
-                aw = getattr(arr, 'width', None) or arr[0]
-                ah = getattr(arr, 'height', None) or arr[1]
-                logger.info("Sensor pixel array: %dx%d (no ActiveAreas)", aw, ah)
-                picam2.set_controls({"ScalerCrop": (0, 0, aw, ah)})
 
             picam2.set_controls(self._build_controls())
             time.sleep(0.5)  # controls settle

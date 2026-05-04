@@ -150,6 +150,13 @@ function stepExposure(delta) {
   onExpSlider(newIdx);
 }
 
+function onEvSlider(v) {
+  const val = parseFloat(v);
+  const sign = val > 0 ? '+' : '';
+  document.getElementById('ev-display').textContent = sign + val.toFixed(2);
+  queueSetting('exposure_value', val);
+}
+
 function onGainSlider(v) {
   const gain = parseFloat(v);
   settings.analogue_gain = gain;
@@ -226,6 +233,12 @@ function renderControls(s) {
   const slider = document.getElementById('exp-slider');
   slider.value = expIdx;
   document.getElementById('exp-display').textContent = SHUTTER_LABELS[expIdx];
+
+  // EV offset
+  const ev = s.exposure_value ?? 0.0;
+  document.getElementById('ev-slider').value = ev;
+  const evSign = ev > 0 ? '+' : '';
+  document.getElementById('ev-display').textContent = evSign + parseFloat(ev).toFixed(2);
 
   // Gain
   const gain = s.analogue_gain || 1.0;
@@ -324,11 +337,37 @@ function setStatus(text, state) {
   lbl.textContent = text;
 }
 
+let _lastColourGains = null;
+
 function updateMetaOverlay(data) {
   document.getElementById('meta-exp').textContent  = 'Exp: ' + (data.exposure_fmt || '—');
   document.getElementById('meta-gain').textContent = 'Gain: ' + (data.gain ? data.gain + '×' : '—');
   document.getElementById('meta-lux').textContent  = data.lux > 0 ? 'Lux: ' + data.lux : '';
   document.getElementById('frame-time').textContent = data.time || '—';
+
+  if (data.colour_gains && data.colour_gains.length === 2) {
+    _lastColourGains = data.colour_gains;
+    const r = data.colour_gains[0].toFixed(2);
+    const b = data.colour_gains[1].toFixed(2);
+    document.getElementById('wb-live-r').textContent = 'R ' + r;
+    document.getElementById('wb-live-b').textContent = 'B ' + b;
+  }
+}
+
+function applyAutoWb() {
+  if (!_lastColourGains) return;
+  const r = parseFloat(_lastColourGains[0].toFixed(2));
+  const b = parseFloat(_lastColourGains[1].toFixed(2));
+  // Clamp to slider range
+  const rc = Math.max(0.5, Math.min(4.0, r));
+  const bc = Math.max(0.5, Math.min(4.0, b));
+  document.getElementById('r-gain').value = rc;
+  document.getElementById('b-gain').value = bc;
+  document.getElementById('r-display').textContent = rc.toFixed(2);
+  document.getElementById('b-display').textContent = bc.toFixed(2);
+  setWbMode('manual');
+  queueSetting('colour_gain_r', rc);
+  queueSetting('colour_gain_b', bc);
 }
 
 function startCountdown(exposureUs) {

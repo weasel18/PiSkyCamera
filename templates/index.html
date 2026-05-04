@@ -43,6 +43,13 @@
             <button id="btn-ae-manual" class="toggle-btn"       onclick="setExposureMode('manual')">Manual</button>
           </div>
         </div>
+        <div class="row">
+          <label>EV Offset</label>
+          <input type="range" id="ev-slider" class="slider"
+                 min="-3" max="3" step="0.25"
+                 oninput="onEvSlider(this.value)">
+          <span class="val-label" id="ev-display">0.0</span>
+        </div>
         <div id="manual-exp-section">
           <div class="row">
             <label>Speed</label>
@@ -73,6 +80,12 @@
             <button id="btn-wb-auto"   class="toggle-btn active" onclick="setWbMode('auto')">Auto</button>
             <button id="btn-wb-manual" class="toggle-btn"        onclick="setWbMode('manual')">Manual</button>
           </div>
+        </div>
+        <div class="row" id="wb-live-row">
+          <label>Live WB</label>
+          <span class="wb-live" id="wb-live-r">R —</span>
+          <span class="wb-live" id="wb-live-b">B —</span>
+          <button class="step-btn" id="wb-copy-btn" onclick="applyAutoWb()" title="Copy live WB to manual sliders">↓</button>
         </div>
         <div id="manual-wb-section">
           <div class="row">

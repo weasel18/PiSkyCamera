@@ -57,7 +57,7 @@ class RtspFeeder:
         # off-by-one rounding that would make the scaled image 1-2 px taller than
         # the target, causing pad to clip the top row(s).
         def _scaled_w(target_h):
-            return (int(target_h * CAPTURE_W / CAPTURE_H) // 2) * 2
+            return (round(target_h * CAPTURE_W / CAPTURE_H) // 2) * 2
 
         main_sw = _scaled_w(main_h)
         sub_sw  = _scaled_w(sub_h)
