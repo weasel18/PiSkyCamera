@@ -636,6 +636,16 @@ def _fmt_exposure(us: int) -> str:
     return f"1/{denom}"
 
 
+def _needs_camera_restart(changed: dict) -> bool:
+    """Return True when a setting change requires a full camera restart."""
+    if "exposure_mode" in changed:
+        return True
+    if "exposure_time" in changed:
+        # Only restart for long exposures (>1s); small shutter tweaks settle via set_controls
+        return int(changed["exposure_time"]) > 1_000_000
+    return False
+
+
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
     return jsonify(config.all())
@@ -648,7 +658,7 @@ def post_settings():
         return jsonify({"error": "no data"}), 400
 
     ALLOWED = {
-        "exposure_mode", "exposure_time", "analogue_gain", "exposure_value",
+        "exposure_mode", "exposure_time", "analogue_gain", "exposure_value", "ae_constraint_mode",
         "awb_mode", "colour_gain_r", "colour_gain_b",
         "noise_reduction_mode",
         "brightness", "contrast", "saturation", "sharpness",
@@ -670,7 +680,12 @@ def post_settings():
     elif any(k in ("resolution", "stream_fps", "sub_resolution", "sub_fps", "rtsp_port") for k in filtered):
         from rtsp_feeder import rtsp_feeder
         rtsp_feeder.restart()
-        camera_service.apply_settings()
+        camera_service.restart()
+    elif _needs_camera_restart(filtered):
+        # Changing frame duration requires a full camera restart — set_controls()
+        # alone doesn't reliably flush the existing frame buffer, causing old fast
+        # frames to keep publishing and resetting the long-exposure countdown.
+        camera_service.restart()
     else:
         camera_service.apply_settings()
 
