@@ -150,6 +150,10 @@ function stepExposure(delta) {
   onExpSlider(newIdx);
 }
 
+function onAeConstraint(v) {
+  queueSetting('ae_constraint_mode', parseInt(v));
+}
+
 function onEvSlider(v) {
   const val = parseFloat(v);
   const sign = val > 0 ? '+' : '';
@@ -199,8 +203,8 @@ function onFlip() {
 // ── Presets ───────────────────────────────────────────────────────────────────
 
 const PRESETS = {
-  day:     { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:10, analogue_gain:1.0,  noise_reduction_mode:2 },
-  night:   { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:5,  analogue_gain:4.0,  noise_reduction_mode:1 },
+  day:     { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:10, analogue_gain:1.0,  noise_reduction_mode:2,  exposure_value:0.0,   ae_constraint_mode:0 },
+  night:   { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:5,  analogue_gain:4.0,  noise_reduction_mode:1,  exposure_value:-0.75, ae_constraint_mode:1 },
   planets: { exposure_mode:'manual', awb_mode:'auto',   stream_fps:10, analogue_gain:4.0,  noise_reduction_mode:0,
              exposure_time:50_000, colour_gain_r:2.0, colour_gain_b:1.5 },
   deepsky: { exposure_mode:'manual', awb_mode:'manual', stream_fps:1,  analogue_gain:8.0,  noise_reduction_mode:0,
@@ -233,6 +237,10 @@ function renderControls(s) {
   const slider = document.getElementById('exp-slider');
   slider.value = expIdx;
   document.getElementById('exp-display').textContent = SHUTTER_LABELS[expIdx];
+
+  // AE constraint mode
+  const aec = document.getElementById('ae-constraint');
+  if (aec) aec.value = String(s.ae_constraint_mode ?? 0);
 
   // EV offset
   const ev = s.exposure_value ?? 0.0;
@@ -404,8 +412,8 @@ function connectSSE() {
       refreshPreview();
       updateMetaOverlay(data);
       setStatus('Live', 'alive');
-      // Restart countdown for next frame
-      startCountdown(settings.exposure_time || 0);
+      // Restart countdown for next frame (manual mode only)
+      startCountdown(settings.exposure_mode === 'manual' ? (settings.exposure_time || 0) : 0);
     } catch (_) {}
   };
 
