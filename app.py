@@ -636,6 +636,77 @@ def _fmt_exposure(us: int) -> str:
     return f"1/{denom}"
 
 
+_VALID_PRESETS = {"day", "night", "planets", "deepsky", "trails", "longexp"}
+_VALID_RESOLUTIONS = {(3840, 2160), (2560, 1440), (1920, 1080), (1280, 720)}
+
+
+def _validate_settings(data: dict):
+    """Coerce and clamp settings values. Returns cleaned dict or raises ValueError."""
+    out = {}
+    for k, v in data.items():
+        try:
+            if k == "exposure_mode":
+                if v not in ("auto", "manual"):
+                    raise ValueError(f"exposure_mode must be auto or manual")
+                out[k] = v
+            elif k == "exposure_time":
+                out[k] = max(100, min(120_000_000, int(v)))
+            elif k == "analogue_gain":
+                out[k] = max(1.0, min(16.0, float(v)))
+            elif k == "exposure_value":
+                out[k] = max(-8.0, min(8.0, float(v)))
+            elif k == "ae_constraint_mode":
+                if int(v) not in (0, 1, 2):
+                    raise ValueError(f"ae_constraint_mode must be 0, 1, or 2")
+                out[k] = int(v)
+            elif k == "awb_mode":
+                if v not in ("auto", "manual"):
+                    raise ValueError(f"awb_mode must be auto or manual")
+                out[k] = v
+            elif k in ("colour_gain_r", "colour_gain_b"):
+                out[k] = max(0.5, min(4.0, float(v)))
+            elif k == "noise_reduction_mode":
+                if int(v) not in (0, 1, 2, 3):
+                    raise ValueError(f"noise_reduction_mode must be 0-3")
+                out[k] = int(v)
+            elif k == "brightness":
+                out[k] = max(-1.0, min(1.0, float(v)))
+            elif k == "contrast":
+                out[k] = max(0.0, min(3.0, float(v)))
+            elif k == "saturation":
+                out[k] = max(0.0, min(2.0, float(v)))
+            elif k == "sharpness":
+                out[k] = max(0.0, min(2.0, float(v)))
+            elif k == "resolution":
+                w, h = int(v[0]), int(v[1])
+                if (w, h) not in _VALID_RESOLUTIONS:
+                    raise ValueError(f"unsupported resolution {w}x{h}")
+                out[k] = [w, h]
+            elif k == "sub_resolution":
+                out[k] = [max(320, int(v[0])), max(240, int(v[1]))]
+            elif k in ("hflip", "vflip", "fisheye_lens", "schedule_enabled"):
+                out[k] = bool(v)
+            elif k in ("stream_fps", "sub_fps"):
+                out[k] = max(1, min(10, int(v)))
+            elif k == "fisheye_fov":
+                out[k] = max(120, min(220, int(v)))
+            elif k == "latitude":
+                out[k] = max(-90.0, min(90.0, float(v)))
+            elif k == "longitude":
+                out[k] = max(-180.0, min(180.0, float(v)))
+            elif k in ("schedule_day_preset", "schedule_night_preset"):
+                if v not in _VALID_PRESETS:
+                    raise ValueError(f"{k} must be one of {_VALID_PRESETS}")
+                out[k] = v
+            elif k in ("schedule_sunset_offset", "schedule_sunrise_offset"):
+                out[k] = max(-120, min(120, int(v)))
+            else:
+                out[k] = v
+        except (TypeError, IndexError) as e:
+            raise ValueError(f"invalid value for {k}: {e}")
+    return out
+
+
 def _needs_camera_restart(changed: dict) -> bool:
     """Return True when a setting change requires a full camera restart."""
     if "exposure_mode" in changed:
@@ -672,6 +743,11 @@ def post_settings():
     filtered = {k: v for k, v in data.items() if k in ALLOWED}
     if not filtered:
         return jsonify({"error": "no valid keys"}), 400
+
+    try:
+        filtered = _validate_settings(filtered)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
     config.update(filtered)
 

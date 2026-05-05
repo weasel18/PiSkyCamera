@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 
 PRESETS = {
     "day":     {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 10,
-                "analogue_gain": 1.0,  "noise_reduction_mode": 2,  "exposure_value": 0.0},
+                "analogue_gain": 1.0,  "noise_reduction_mode": 2,
+                "exposure_value": 0.0,  "ae_constraint_mode": 0},
     "night":   {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 5,
-                "analogue_gain": 4.0,  "noise_reduction_mode": 1,  "exposure_value": 0.0},
+                "analogue_gain": 4.0,  "noise_reduction_mode": 1,
+                "exposure_value": -0.75, "ae_constraint_mode": 1},
     "planets": {"exposure_mode": "manual", "awb_mode": "auto",   "stream_fps": 10,
                 "analogue_gain": 4.0,  "noise_reduction_mode": 0,
                 "exposure_time": 50_000, "colour_gain_r": 2.0, "colour_gain_b": 1.5},
@@ -208,7 +210,19 @@ class Scheduler:
         preset_data = PRESETS.get(preset_name)
         if preset_data:
             config.update(preset_data)
-            camera_service.apply_settings()
+            needs_rtsp = any(k in ("stream_fps", "sub_fps") for k in preset_data)
+            needs_cam_restart = (
+                "exposure_mode" in preset_data or
+                ("exposure_time" in preset_data and int(preset_data["exposure_time"]) > 1_000_000)
+            )
+            if needs_rtsp:
+                from rtsp_feeder import rtsp_feeder
+                rtsp_feeder.restart()
+                camera_service.restart()
+            elif needs_cam_restart:
+                camera_service.restart()
+            else:
+                camera_service.apply_settings()
             logger.info("Schedule: %s → %s preset", period, preset_name)
 
 
