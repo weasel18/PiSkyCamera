@@ -91,6 +91,9 @@ class CameraService:
             controls["AnalogueGain"] = float(cfg.get("analogue_gain", 1.0))
             # EV compensation: shifts the AE target up/down in stops.
             controls["ExposureValue"] = float(cfg.get("exposure_value", 0.0))
+            # Highlight constraint: biases AE toward underexposure to protect
+            # bright areas from clipping (good for night/star work).
+            controls["AeConstraintMode"] = int(cfg.get("ae_constraint_mode", 0))
 
         if cfg["awb_mode"] == "manual":
             controls["AwbEnable"] = False
@@ -142,7 +145,7 @@ class CameraService:
             video_config = picam2.create_video_configuration(
                 main={"format": "RGB888", "size": (4056, 3040)},
                 transform=Transform(hflip=bool(cfg.get("hflip")), vflip=bool(cfg.get("vflip"))),
-                controls={"FrameDurationLimits": (100, init_max_us)},
+                controls={"FrameDurationLimits": (init_max_us, init_max_us)},
                 buffer_count=2,
             )
             picam2.configure(video_config)
@@ -150,10 +153,18 @@ class CameraService:
             picam2.start()
             time.sleep(1.5)  # sensor warmup
 
-            picam2.set_controls(self._build_controls())
+            controls = self._build_controls()
+            # picamera2 default ScalerCrop in video mode is derived from
+            # PixelArrayActiveAreas and often has a positive y-offset, cropping
+            # the top rows of the sensor.  Pin it to the full pixel array so the
+            # complete 4:3 frame (and full fisheye circle) is always captured.
+            pixel_size = picam2.camera_properties.get('PixelArraySize', (4056, 3040))
+            controls["ScalerCrop"] = (0, 0, int(pixel_size[0]), int(pixel_size[1]))
+            picam2.set_controls(controls)
             time.sleep(0.5)  # controls settle
 
-            logger.info("Camera running at 4056x3040")
+            logger.info("Camera running at 4056x3040, ScalerCrop=(0,0,%d,%d)",
+                        int(pixel_size[0]), int(pixel_size[1]))
 
             while self._running and not self._restart_event.is_set():
                 if self._apply_event.is_set():
