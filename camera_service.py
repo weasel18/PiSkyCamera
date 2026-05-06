@@ -15,6 +15,7 @@ class CameraService:
         self._thread = None
         self._apply_event = threading.Event()
         self._restart_event = threading.Event()
+        self._picam2 = None  # live reference for immediate set_controls()
 
     def start(self):
         self._running = True
@@ -31,7 +32,20 @@ class CameraService:
         self._restart_event.set()
 
     def apply_settings(self):
-        """Signal camera thread to push new controls without restart."""
+        """Push new controls as soon as possible.
+
+        Calls set_controls() directly on the live camera if one is running so
+        the new values are queued for the very next frame boundary — without
+        waiting for the camera loop to come back around (which can be an entire
+        exposure-time away on long exposures).  The _apply_event acts as a
+        fallback in case the direct call races with a camera restart.
+        """
+        picam2 = self._picam2
+        if picam2 is not None:
+            try:
+                picam2.set_controls(self._build_controls())
+            except Exception:
+                pass
         self._apply_event.set()
 
     def peek_frame(self):
@@ -170,6 +184,7 @@ class CameraService:
             picam2.set_controls(controls)
             time.sleep(0.5)  # controls settle
 
+            self._picam2 = picam2  # expose for direct set_controls() from apply_settings()
             _diag_frames = 0
 
             while self._running and not self._restart_event.is_set():
@@ -199,6 +214,7 @@ class CameraService:
                 self._publish(frame, time.time(), meta)
 
         finally:
+            self._picam2 = None
             try:
                 picam2.stop()
             except Exception:

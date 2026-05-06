@@ -386,7 +386,12 @@ function startCountdown(exposureUs) {
     document.getElementById('capture-progress').style.width = '0%';
     return;
   }
-  const start = Date.now();
+  // Seed elapsed from lastFrameTs so the bar resumes correctly after a page
+  // refresh rather than always restarting from zero.
+  const alreadyElapsed = lastFrameTs > 0
+    ? Math.max(0, Date.now() / 1000 - lastFrameTs)
+    : 0;
+  const start = Date.now() - alreadyElapsed * 1000;
   const bar = document.getElementById('capture-progress');
   const lbl = document.getElementById('capture-label');
   countdownTimer = setInterval(() => {
@@ -552,6 +557,8 @@ async function loadInfo() {
     document.getElementById('rtsp-sub-url').innerHTML = urlLink(data.rtsp_sub_url);
     document.getElementById('onvif-url').innerHTML    = urlLink(data.onvif_url);
     document.getElementById('snap-url').innerHTML     = urlLink(data.snapshot_url);
+    // Seed lastFrameTs so startCountdown resumes at the correct position on load
+    if (data.last_frame_ts) lastFrameTs = data.last_frame_ts;
   } catch (_) {}
 }
 
