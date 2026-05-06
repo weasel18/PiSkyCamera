@@ -8,6 +8,7 @@ DEFAULTS = {
     "exposure_mode": "auto",
     "exposure_time": 100_000,       # microseconds (100ms)
     "exposure_value": 0.0,          # EV offset for auto mode (-3 to +3 stops)
+    "ae_constraint_mode": 0,        # 0=Normal 1=Highlights 2=Shadows
     "analogue_gain": 1.0,
     "awb_mode": "auto",
     "colour_gain_r": 2.0,

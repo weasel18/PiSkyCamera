@@ -50,6 +50,14 @@
                  oninput="onEvSlider(this.value)">
           <span class="val-label" id="ev-display">0.0</span>
         </div>
+        <div class="row">
+          <label>AE Bias</label>
+          <select id="ae-constraint" onchange="onAeConstraint(this.value)">
+            <option value="0">Normal</option>
+            <option value="1">Highlights (darker)</option>
+            <option value="2">Shadows (brighter)</option>
+          </select>
+        </div>
         <div id="manual-exp-section">
           <div class="row">
             <label>Speed</label>
