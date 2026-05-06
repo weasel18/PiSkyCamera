@@ -1,8 +1,13 @@
 import json
+import logging
 import os
 import threading
 
+logger = logging.getLogger(__name__)
+
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "camera_settings.json")
+CONFIG_TMP  = CONFIG_FILE + ".tmp"
+CONFIG_BAK  = CONFIG_FILE + ".bak"
 
 DEFAULTS = {
     "exposure_mode": "auto",
@@ -51,20 +56,33 @@ class Config:
         self._load()
 
     def _load(self):
-        if os.path.exists(CONFIG_FILE):
+        if not os.path.exists(CONFIG_FILE):
+            return
+        try:
+            with open(CONFIG_FILE) as f:
+                saved = json.load(f)
+            with self._lock:
+                self._data.update(saved)
+        except Exception as e:
+            # Don't silently lose user settings — preserve the corrupt file as
+            # .bak so it can be inspected, then fall back to defaults.
+            logger.warning("Config load failed (%s); preserving as %s and using defaults",
+                           e, CONFIG_BAK)
             try:
-                with open(CONFIG_FILE) as f:
-                    saved = json.load(f)
-                with self._lock:
-                    self._data.update(saved)
-            except Exception:
+                os.replace(CONFIG_FILE, CONFIG_BAK)
+            except OSError:
                 pass
 
     def save(self):
         with self._lock:
             data = self._data.copy()
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+            # Atomic write: tmp file + fsync + rename. A power loss between the
+            # write and rename leaves the prior valid config intact.
+            with open(CONFIG_TMP, "w") as f:
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(CONFIG_TMP, CONFIG_FILE)
 
     def get(self, key, default=None):
         with self._lock:
@@ -73,12 +91,12 @@ class Config:
     def set(self, key, value):
         with self._lock:
             self._data[key] = value
-        self.save()
+            self.save()
 
     def update(self, d):
         with self._lock:
             self._data.update(d)
-        self.save()
+            self.save()
 
     def all(self):
         with self._lock:

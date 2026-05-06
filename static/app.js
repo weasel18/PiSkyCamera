@@ -95,12 +95,32 @@ async function flushUpdate() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (!res.ok) {
+      // Server rejected the payload — refetch canonical settings so the UI
+      // doesn't keep showing the user's invalid input as if it had stuck.
+      try { await loadSettings(); } catch (_) {}
+      return;
+    }
+    // Server may have clamped values (e.g. fps capped at 10).  Merge the
+    // applied dict back into local state and re-render any affected control.
+    if (data.applied) {
+      Object.assign(settings, data.applied);
+      renderControls(settings);
+    }
     if (data.restart) {
       setStatus('Restarting camera…', 'warn');
     }
   } catch (e) {
     console.error('Settings update failed:', e);
+    try { await loadSettings(); } catch (_) {}
   }
+}
+
+async function loadSettings() {
+  const res = await fetch('/api/settings');
+  if (!res.ok) throw new Error('settings fetch failed');
+  settings = await res.json();
+  renderControls(settings);
 }
 
 function queueSetting(key, value) {
@@ -579,9 +599,7 @@ async function loadInfo() {
 
 async function init() {
   try {
-    const res = await fetch('/api/settings');
-    settings   = await res.json();
-    renderControls(settings);
+    await loadSettings();
   } catch (e) {
     setStatus('Camera offline', 'warn');
   }

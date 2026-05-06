@@ -173,13 +173,13 @@ class CameraService:
             logger.info("PixelArraySize=%s  PixelArrayActiveAreas=%s", pixel_size, active_areas)
 
             controls = self._build_controls()
-            # Use the full pixel-array for ScalerCrop; try PixelArrayActiveAreas
-            # first (avoids optical-black rows), fall back to PixelArraySize.
-            if active_areas:
-                aa = active_areas[0]   # (x, y, width, height)
-                controls["ScalerCrop"] = (int(aa[0]), int(aa[1]), int(aa[2]), int(aa[3]))
-            else:
-                controls["ScalerCrop"] = (0, 0, int(pixel_size[0]), int(pixel_size[1]))
+            # Pin ScalerCrop to the full pixel array.  PixelArrayActiveAreas
+            # would seem more correct (it skips optical-black rows) but its
+            # tuple format is ambiguous on the Pi 5 / PiSP backend — the IMX477
+            # reports (8, 16, 4056, 3040) which can't be (x, y, w, h) since
+            # 8+4056 > 4056.  Using the full array forces libcamera to clamp
+            # to the real bounds and never silently shrinks the frame.
+            controls["ScalerCrop"] = (0, 0, int(pixel_size[0]), int(pixel_size[1]))
             logger.info("Setting ScalerCrop=%s", controls["ScalerCrop"])
             picam2.set_controls(controls)
             time.sleep(0.5)  # controls settle

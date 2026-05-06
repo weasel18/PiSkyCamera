@@ -1,8 +1,10 @@
 import base64
 import hashlib
+import hmac
 import io
 import json
 import socket
+import subprocess
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -193,10 +195,15 @@ def _get_stream_token():
 def _check_ws_security() -> bool:
     """
     Validate WS-UsernameToken in the current SOAP request.
-    Returns True if credentials match config or if no Security header is present.
+    Returns True only when a valid digest matches the configured credentials.
+    Missing token, malformed XML, or comparison failure all return False — auth
+    must be opt-in for protected actions, not opt-out.
     """
     try:
         root = ET.fromstring(request.data)
+    except ET.ParseError:
+        return False
+    try:
         token_elem = None
         for elem in root.iter():
             local = elem.tag.split('}')[1] if '}' in elem.tag else elem.tag
@@ -204,7 +211,7 @@ def _check_ws_security() -> bool:
                 token_elem = elem
                 break
         if token_elem is None:
-            return True  # unauthenticated request — allow (e.g. GetSystemDateAndTime)
+            return False
 
         username = password = nonce_b64 = created = ''
         is_digest = True
@@ -222,24 +229,39 @@ def _check_ws_security() -> bool:
 
         cfg_user = config.get("onvif_username", "admin")
         cfg_pass = config.get("onvif_password", "admin")
-        if username != cfg_user:
+        if not hmac.compare_digest(username, cfg_user):
             return False
         if not is_digest:
-            return password == cfg_pass
+            return hmac.compare_digest(password, cfg_pass)
         # Digest = Base64(SHA1(nonce_bytes + created_utf8 + password_utf8))
         nonce_bytes = base64.b64decode(nonce_b64)
         digest = base64.b64encode(
             hashlib.sha1(nonce_bytes + created.encode() + cfg_pass.encode()).digest()
         ).decode()
-        return digest == password
-    except Exception:
-        return True  # permissive on parse errors
+        return hmac.compare_digest(digest, password)
+    except Exception as e:
+        logger.warning("WS-Security check error: %s", e)
+        return False
+
+
+# ONVIF Profile S allows these actions without authentication so a discovery
+# probe can identify the device before credentials are exchanged.  Everything
+# else (especially media actions like GetStreamUri/GetSnapshotUri) requires a
+# valid WS-UsernameToken digest.
+_UNAUTH_ONVIF_ACTIONS = frozenset({
+    'GetSystemDateAndTime',
+    'GetServices',
+    'GetCapabilities',
+    'GetServiceCapabilities',
+    'GetWsdlUrl',
+    'GetEndpointReference',
+})
 
 
 def _require_auth(action: str | None) -> Response | None:
     """Return a 401 SOAP fault if credentials are wrong, else None."""
-    if action == 'GetSystemDateAndTime':
-        return None  # ONVIF spec: this endpoint must work without auth
+    if action in _UNAUTH_ONVIF_ACTIONS:
+        return None
     if not _check_ws_security():
         return Response(
             soap_fault("Not Authorized"),
@@ -772,7 +794,9 @@ def post_settings():
     else:
         camera_service.apply_settings()
 
-    return jsonify({"ok": True})
+    # Echo the post-validation values so the UI can sync to clamped/canonical
+    # values (e.g. fps clipped to 1-10) without an extra GET round-trip.
+    return jsonify({"ok": True, "applied": filtered})
 
 
 @app.route("/api/schedule")
