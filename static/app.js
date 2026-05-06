@@ -532,10 +532,23 @@ async function loadStats() {
       d.disk_free_gb != null ? d.disk_free_gb.toFixed(1) + ' GB free (' + d.disk_used_pct + '% used)' : '—';
     document.getElementById('stat-uptime').textContent = d.uptime || '—';
     const throttleRow = document.getElementById('stat-throttle-row');
-    if (d.throttled) {
+    const hasCurrent = d.throttled;
+    const hasPast    = d.throttle_past_flags && d.throttle_past_flags.length;
+    if (hasCurrent || hasPast) {
       throttleRow.style.display = '';
-      document.getElementById('stat-throttle').textContent =
-        d.throttle_flags.length ? d.throttle_flags.join(', ') : (d.throttled_hex || 'yes');
+      const keyEl = throttleRow.querySelector('.info-key');
+      const valEl = document.getElementById('stat-throttle');
+      if (hasCurrent) {
+        keyEl.className = 'info-key warn';
+        keyEl.textContent = 'Throttle';
+        valEl.className = 'warn';
+        valEl.textContent = d.throttle_flags.join(', ') || d.throttled_hex || 'yes';
+      } else {
+        keyEl.className = 'info-key';
+        keyEl.textContent = 'Past throttle';
+        valEl.className = '';
+        valEl.textContent = d.throttle_past_flags.join(', ');
+      }
     } else {
       throttleRow.style.display = 'none';
     }

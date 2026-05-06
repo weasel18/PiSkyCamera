@@ -595,9 +595,14 @@ def sse_events():
     """Server-Sent Events: push a notification whenever a new frame arrives."""
     def generate():
         last_ts = 0.0
-        while True:
+        while camera_service._running:
             try:
-                frame, ts = camera_service.wait_for_frame(last_ts=last_ts, timeout=30)
+                # Short timeout so this thread exits promptly on service shutdown
+                # rather than holding the Flask worker thread open for 30 s and
+                # delaying the process exit during systemctl restart.
+                frame, ts = camera_service.wait_for_frame(last_ts=last_ts, timeout=3.0)
+                if not camera_service._running:
+                    return
                 if ts > last_ts and frame is not None:
                     last_ts = ts
                     meta = camera_service.get_metadata()
@@ -614,6 +619,8 @@ def sse_events():
                     yield f"data: {payload}\n\n"
                 else:
                     yield ": ping\n\n"
+            except GeneratorExit:
+                return
             except Exception:
                 yield ": error\n\n"
 
@@ -858,14 +865,23 @@ def get_stats():
             capture_output=True, text=True, timeout=2,
         )
         val = int(result.stdout.strip().split("=")[1], 16)
-        stats["throttled"] = val != 0
-        stats["throttled_hex"] = hex(val)
-        bit_names = {
-            0: "undervoltage", 1: "freq_cap", 2: "throttled", 3: "soft_temp_limit",
-            16: "undervoltage_occurred", 17: "freq_cap_occurred",
-            18: "throttled_occurred", 19: "soft_temp_limit_occurred",
-        }
-        stats["throttle_flags"] = [name for bit, name in bit_names.items() if val & (1 << bit)]
+        # Bits 0-3: currently active conditions.  Bits 16-19: sticky "occurred
+        # since boot" flags that never self-clear — don't treat those as an
+        # active warning or the badge will stay up permanently after any
+        # throttle event even when the Pi has cooled down.
+        current = val & 0x0F
+        current_names = {0: "undervoltage", 1: "freq_cap",
+                         2: "throttled",    3: "soft_temp_limit"}
+        past_names    = {0: "undervoltage", 1: "freq_cap",
+                         2: "throttled",    3: "soft_temp_limit"}
+        stats["throttled"]      = current != 0
+        stats["throttled_hex"]  = hex(val)
+        stats["throttle_flags"] = [name for bit, name in current_names.items()
+                                   if current & (1 << bit)]
+        past = (val >> 16) & 0x0F
+        stats["throttle_past_flags"] = [f"{name}_occurred"
+                                        for bit, name in past_names.items()
+                                        if past & (1 << bit)]
     except Exception:
         stats["throttled"] = None
         stats["throttle_flags"] = []
