@@ -153,18 +153,24 @@ class CameraService:
             picam2.start()
             time.sleep(1.5)  # sensor warmup
 
+            props = picam2.camera_properties
+            pixel_size   = props.get('PixelArraySize', (4056, 3040))
+            active_areas = props.get('PixelArrayActiveAreas')
+            logger.info("PixelArraySize=%s  PixelArrayActiveAreas=%s", pixel_size, active_areas)
+
             controls = self._build_controls()
-            # picamera2 default ScalerCrop in video mode is derived from
-            # PixelArrayActiveAreas and often has a positive y-offset, cropping
-            # the top rows of the sensor.  Pin it to the full pixel array so the
-            # complete 4:3 frame (and full fisheye circle) is always captured.
-            pixel_size = picam2.camera_properties.get('PixelArraySize', (4056, 3040))
-            controls["ScalerCrop"] = (0, 0, int(pixel_size[0]), int(pixel_size[1]))
+            # Use the full pixel-array for ScalerCrop; try PixelArrayActiveAreas
+            # first (avoids optical-black rows), fall back to PixelArraySize.
+            if active_areas:
+                aa = active_areas[0]   # (x, y, width, height)
+                controls["ScalerCrop"] = (int(aa[0]), int(aa[1]), int(aa[2]), int(aa[3]))
+            else:
+                controls["ScalerCrop"] = (0, 0, int(pixel_size[0]), int(pixel_size[1]))
+            logger.info("Setting ScalerCrop=%s", controls["ScalerCrop"])
             picam2.set_controls(controls)
             time.sleep(0.5)  # controls settle
 
-            logger.info("Camera running at 4056x3040, ScalerCrop=(0,0,%d,%d)",
-                        int(pixel_size[0]), int(pixel_size[1]))
+            _diag_frames = 0
 
             while self._running and not self._restart_event.is_set():
                 if self._apply_event.is_set():
@@ -182,6 +188,13 @@ class CameraService:
                     meta = dict(request.get_metadata())
                 finally:
                     request.release()
+
+                # Log actual ScalerCrop readback for the first few frames so we
+                # can verify the ISP is honouring what we requested.
+                if _diag_frames < 3:
+                    _diag_frames += 1
+                    logger.info("Frame %d: ScalerCrop readback=%s  shape=%s",
+                                _diag_frames, meta.get('ScalerCrop'), frame.shape)
 
                 self._publish(frame, time.time(), meta)
 
