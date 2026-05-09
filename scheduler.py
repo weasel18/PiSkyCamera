@@ -120,14 +120,14 @@ class Scheduler:
         lon = cfg.get("longitude", 0.0)
         now = datetime.now(timezone.utc)
 
-        rise, sset = sun_times(lat, lon)
         soff = cfg.get("schedule_sunset_offset", 30)
         roff = cfg.get("schedule_sunrise_offset", 30)
+        raw = _raw_sun_events(now, lat, lon)
+        events = _sun_events(now, lat, lon, soff, roff)
+        period, _, (nxt_ts, nxt_period) = _classify_now(events, now)
+        rise, sset = _today_sun(raw, now)
         night_start = sset + timedelta(minutes=soff) if sset else None
         day_start   = rise - timedelta(minutes=roff)  if rise else None
-
-        period = _current_period(now, day_start, night_start)
-        nxt_ts, nxt_period = self._next_transition(now, day_start, night_start, lat, lon)
 
         override_until = cfg.get("schedule_override_until", 0)
         override_active = override_until > time.time()
@@ -149,20 +149,6 @@ class Scheduler:
             "override_active":  override_active,
             "override_until_epoch": int(override_until) if override_active else None,
         }
-
-    def _next_transition(self, now, day_start, night_start, lat, lon):
-        from config import config
-        roff = config.get("schedule_sunrise_offset", 30)
-        if day_start and now < day_start:
-            return day_start, "day"
-        if night_start and now < night_start:
-            return night_start, "night"
-        # Past tonight's night_start — next transition is tomorrow's day_start
-        tomorrow = (now + timedelta(days=1)).date()
-        rise_t, _ = sun_times(lat, lon, tomorrow)
-        if rise_t:
-            return rise_t - timedelta(minutes=roff), "day"
-        return None, None
 
     # ── Background loop ───────────────────────────────────────────────────────
 
@@ -189,11 +175,10 @@ class Scheduler:
             return  # location not configured
 
         now = datetime.now(timezone.utc)
-        rise, sset = sun_times(lat, lon)
-        night_start = sset + timedelta(minutes=cfg.get("schedule_sunset_offset", 30)) if sset else None
-        day_start   = rise - timedelta(minutes=cfg.get("schedule_sunrise_offset", 30)) if rise else None
-
-        period = _current_period(now, day_start, night_start)
+        soff = cfg.get("schedule_sunset_offset", 30)
+        roff = cfg.get("schedule_sunrise_offset", 30)
+        events = _sun_events(now, lat, lon, soff, roff)
+        period, _, _ = _classify_now(events, now)
         if period == self._last_period:
             return
 
@@ -226,12 +211,59 @@ class Scheduler:
             logger.info("Schedule: %s → %s preset", period, preset_name)
 
 
-def _current_period(now, day_start, night_start):
-    if day_start is None or night_start is None:
-        return "day"
-    if day_start <= now < night_start:
-        return "day"
-    return "night"
+def _raw_sun_events(now, lat, lon):
+    """Yield (datetime, 'rise'|'sset') across yesterday/today/tomorrow UTC.
+
+    Spanning three UTC dates is necessary because sunset for far-west
+    longitudes (UTC-6, UTC-7) lands on the next UTC date, so a single-day
+    computation classifies local evening as 'before today's sunrise' and
+    incorrectly flips to night up to ~6 hours early.
+    """
+    today = now.date()
+    events = []
+    for delta in (-1, 0, 1):
+        d = today + timedelta(days=delta)
+        rise, sset = sun_times(lat, lon, d)
+        if rise: events.append((rise, "rise"))
+        if sset: events.append((sset, "sset"))
+    events.sort()
+    return events
+
+
+def _sun_events(now, lat, lon, soff_min, roff_min):
+    """Boundary events (offsets applied) labelled with the period they start."""
+    return sorted(
+        (dt - timedelta(minutes=roff_min) if k == "rise" else dt + timedelta(minutes=soff_min),
+         "day" if k == "rise" else "night")
+        for dt, k in _raw_sun_events(now, lat, lon)
+    )
+
+
+def _classify_now(events, now):
+    """Return (current_period, last_event_dt, (next_event_dt, next_period))."""
+    past   = [e for e in events if e[0] <= now]
+    future = [e for e in events if e[0] >  now]
+    cur     = past[-1][1] if past else "day"
+    last_dt = past[-1][0] if past else None
+    nxt     = future[0]   if future else (None, None)
+    return cur, last_dt, nxt
+
+
+def _today_sun(raw_events, now):
+    """Pick raw sunrise/sunset bracketing the current local-day window.
+
+    During day: most recent past sunrise + next upcoming sunset.
+    During night: most recent past sunset + next upcoming sunrise.
+    """
+    rises = [dt for dt, k in raw_events if k == "rise"]
+    ssets = [dt for dt, k in raw_events if k == "sset"]
+    rise_past = [dt for dt in rises if dt <= now]
+    sset_past = [dt for dt in ssets if dt <= now]
+    rise_fut  = [dt for dt in rises if dt >  now]
+    sset_fut  = [dt for dt in ssets if dt >  now]
+    rise = (rise_past[-1] if rise_past else (rise_fut[0] if rise_fut else None))
+    sset = (sset_fut[0]   if sset_fut  else (sset_past[-1] if sset_past else None))
+    return rise, sset
 
 
 scheduler = Scheduler()
