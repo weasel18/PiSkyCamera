@@ -10,29 +10,6 @@ from datetime import datetime, timezone, timedelta, date as date_t
 
 logger = logging.getLogger(__name__)
 
-# ── Preset data (mirrors JS PRESETS) ─────────────────────────────────────────
-
-PRESETS = {
-    "day":     {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 10,
-                "analogue_gain": 1.0,  "noise_reduction_mode": 2,
-                "exposure_value": 0.0,  "ae_constraint_mode": 0},
-    "night":   {"exposure_mode": "auto",   "awb_mode": "auto",   "stream_fps": 5,
-                "analogue_gain": 4.0,  "noise_reduction_mode": 1,
-                "exposure_value": -0.75, "ae_constraint_mode": 1},
-    "planets": {"exposure_mode": "manual", "awb_mode": "auto",   "stream_fps": 10,
-                "analogue_gain": 4.0,  "noise_reduction_mode": 0,
-                "exposure_time": 50_000, "colour_gain_r": 2.0, "colour_gain_b": 1.5},
-    "deepsky": {"exposure_mode": "manual", "awb_mode": "manual", "stream_fps": 1,
-                "analogue_gain": 8.0,  "noise_reduction_mode": 0,
-                "exposure_time": 30_000_000, "colour_gain_r": 2.2, "colour_gain_b": 1.6},
-    "trails":  {"exposure_mode": "manual", "awb_mode": "manual", "stream_fps": 1,
-                "analogue_gain": 4.0,  "noise_reduction_mode": 0,
-                "exposure_time": 15_000_000, "colour_gain_r": 2.0, "colour_gain_b": 1.5},
-    "longexp": {"exposure_mode": "manual", "awb_mode": "manual", "stream_fps": 1,
-                "analogue_gain": 16.0, "noise_reduction_mode": 0,
-                "exposure_time": 120_000_000, "colour_gain_r": 2.2, "colour_gain_b": 1.6},
-}
-
 # ── NOAA sunrise/sunset ───────────────────────────────────────────────────────
 
 def sun_times(lat: float, lon: float, d: date_t | None = None,
@@ -192,13 +169,14 @@ class Scheduler:
 
         preset_key = "schedule_night_preset" if period == "night" else "schedule_day_preset"
         preset_name = cfg.get(preset_key, "deepsky" if period == "night" else "day")
-        preset_data = PRESETS.get(preset_name)
-        if preset_data:
-            config.update(preset_data)
-            needs_rtsp = any(k in ("stream_fps", "sub_fps") for k in preset_data)
+        preset_entry = cfg.get("presets", {}).get(preset_name)
+        preset_values = preset_entry.get("values", {}) if preset_entry else {}
+        if preset_values:
+            config.update(preset_values)
+            needs_rtsp = any(k in ("stream_fps", "sub_fps") for k in preset_values)
             needs_cam_restart = (
-                "exposure_mode" in preset_data or
-                ("exposure_time" in preset_data and int(preset_data["exposure_time"]) > 1_000_000)
+                "exposure_mode" in preset_values or
+                ("exposure_time" in preset_values and int(preset_values["exposure_time"]) > 1_000_000)
             )
             if needs_rtsp:
                 from rtsp_feeder import rtsp_feeder
@@ -209,6 +187,9 @@ class Scheduler:
             else:
                 camera_service.apply_settings()
             logger.info("Schedule: %s → %s preset", period, preset_name)
+        else:
+            logger.warning("Schedule: %s preset '%s' not found, skipping",
+                           period, preset_name)
 
 
 def _raw_sun_events(now, lat, lon):

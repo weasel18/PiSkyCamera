@@ -24,14 +24,10 @@
 
       <section>
         <h2>Presets</h2>
-        <div class="preset-grid">
-          <button class="preset-btn" onclick="applyPreset('day')">Day Auto</button>
-          <button class="preset-btn" onclick="applyPreset('night')">Night Auto</button>
-          <button class="preset-btn" onclick="applyPreset('planets')">Planets</button>
-          <button class="preset-btn" onclick="applyPreset('deepsky')">Deep Sky</button>
-          <button class="preset-btn" onclick="applyPreset('trails')">Star Trails</button>
-          <button class="preset-btn" onclick="applyPreset('longexp')">Long Exp 120s</button>
-        </div>
+        <div class="preset-grid" id="preset-grid"></div>
+        <button class="link-btn" id="preset-edit-toggle"
+                onclick="togglePresetEditor()">Edit presets ▾</button>
+        <div id="preset-editor" hidden></div>
       </section>
 
       <section>

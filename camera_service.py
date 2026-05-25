@@ -1,8 +1,38 @@
+import os
 import threading
 import time
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_create_picamera2():
+    """Construct a Picamera2 without leaking pipe FDs on partial init failure.
+
+    Picamera2.__init__ allocates a notifyme pipe pair early, then probes for
+    cameras.  When no camera is attached the probe raises IndexError and the
+    partially-constructed object's __del__ hits AttributeError on `_preview`
+    before reaching close(), so the pipe FDs never get released.  At the
+    default retry cadence that exhausts the process FD pool within minutes.
+
+    Splitting __new__ from __init__ keeps a live reference to the partial
+    instance even when __init__ raises, so we can close the pipes ourselves.
+    """
+    from picamera2 import Picamera2
+    obj = object.__new__(Picamera2)
+    try:
+        Picamera2.__init__(obj)
+        return obj
+    except Exception:
+        for attr in ("notifyme_r", "notifyme_w"):
+            fd = getattr(obj, attr, None)
+            if isinstance(fd, int) and fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                setattr(obj, attr, -1)
+        raise
 
 
 class CameraService:
@@ -130,42 +160,53 @@ class CameraService:
         return controls
 
     def _run_loop(self):
+        consecutive_failures = 0
         while self._running:
             try:
                 self._run_camera()
+                consecutive_failures = 0
             except Exception as e:
+                consecutive_failures += 1
                 logger.error("Camera error: %s", e, exc_info=True)
-                if self._running:
-                    time.sleep(5)
+                if not self._running:
+                    break
+                # Exponential backoff so an absent/disconnected camera doesn't
+                # spin a tight retry loop.  Picamera2 init can leak resources
+                # even with our cleanup wrapper (libcamera internals), so slow
+                # retries also prevent secondary OS-wide exhaustion.
+                backoff = min(5 * (2 ** min(consecutive_failures - 1, 6)), 300)
+                logger.info("Camera retry in %ds (failure #%d)",
+                            backoff, consecutive_failures)
+                time.sleep(backoff)
 
     def _run_camera(self):
         from config import config
-        from picamera2 import Picamera2
 
         self._restart_event.clear()
         cfg = config.all()
 
         from libcamera import Transform
-        picam2 = Picamera2()
+        picam2 = _safe_create_picamera2()
         try:
-            stream_fps = max(1, int(cfg.get("stream_fps", 10)))
-            stream_us  = 1_000_000 // stream_fps
-            if cfg["exposure_mode"] == "manual":
-                exp_us = max(100, int(cfg.get("exposure_time", 100_000)))
-                init_max_us = max(exp_us, stream_us)
-            else:
-                init_max_us = stream_us  # cap AE from the start; no 30s drift
+            # Always boot the pipeline at a short FrameDurationLimits.
+            # libcamera's IPA marks the first ~6 frames as Status != Success
+            # while AE/AGC settles, and picamera2 silently discards those.
+            # If we start at the user's long FDL (e.g. 120s) those 6 settling
+            # frames take 12 minutes before any frame is delivered.  Starting
+            # short lets warmup complete in <1s, then we switch to the real
+            # FDL via set_controls below.
+            WARMUP_FDL_US = 100_000
 
             video_config = picam2.create_video_configuration(
                 main={"format": "RGB888", "size": (4056, 3040)},
                 transform=Transform(hflip=bool(cfg.get("hflip")), vflip=bool(cfg.get("vflip"))),
-                controls={"FrameDurationLimits": (init_max_us, init_max_us)},
+                controls={"FrameDurationLimits": (WARMUP_FDL_US, WARMUP_FDL_US)},
                 buffer_count=2,
             )
             picam2.configure(video_config)
 
             picam2.start()
-            time.sleep(1.5)  # sensor warmup
+            time.sleep(1.5)  # sensor + IPA warmup at short FDL
 
             props = picam2.camera_properties
             pixel_size   = props.get('PixelArraySize', (4056, 3040))

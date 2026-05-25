@@ -222,27 +222,322 @@ function onFlip() {
 
 // ── Presets ───────────────────────────────────────────────────────────────────
 
-const PRESETS = {
-  day:     { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:10, analogue_gain:1.0,  noise_reduction_mode:2,  exposure_value:0.0,   ae_constraint_mode:0 },
-  night:   { exposure_mode:'auto',   awb_mode:'auto',   stream_fps:5,  analogue_gain:4.0,  noise_reduction_mode:1,  exposure_value:-0.75, ae_constraint_mode:1 },
-  planets: { exposure_mode:'manual', awb_mode:'auto',   stream_fps:10, analogue_gain:4.0,  noise_reduction_mode:0,
-             exposure_time:50_000, colour_gain_r:2.0, colour_gain_b:1.5 },
-  deepsky: { exposure_mode:'manual', awb_mode:'manual', stream_fps:1,  analogue_gain:8.0,  noise_reduction_mode:0,
-             exposure_time:30_000_000, colour_gain_r:2.2, colour_gain_b:1.6 },
-  trails:  { exposure_mode:'manual', awb_mode:'manual', stream_fps:1,  analogue_gain:4.0,  noise_reduction_mode:0,
-             exposure_time:15_000_000, colour_gain_r:2.0, colour_gain_b:1.5 },
-  longexp: { exposure_mode:'manual', awb_mode:'manual', stream_fps:1,  analogue_gain:16.0, noise_reduction_mode:0,
-             exposure_time:120_000_000, colour_gain_r:2.2, colour_gain_b:1.6 },
-};
+// Loaded from /api/presets on boot. Shape: { name: {label, values:{...}} }
+let presets = {};
+
+// Editor schema. Each entry drives one row per preset card. `type` controls
+// the input widget; for 'seconds' the stored value is microseconds but the
+// editor reads/writes seconds for usability.
+const PRESET_FIELDS = [
+  { key: 'exposure_mode', label: 'Exposure', type: 'select',
+    options: [['auto','Auto'], ['manual','Manual']] },
+  { key: 'exposure_time', label: 'Shutter (s)', type: 'seconds',
+    min: 0.0001, max: 240, step: 0.001 },
+  { key: 'analogue_gain', label: 'Gain (×)', type: 'number',
+    min: 1, max: 16, step: 0.1 },
+  { key: 'exposure_value', label: 'EV bias', type: 'number',
+    min: -3, max: 3, step: 0.25 },
+  { key: 'ae_constraint_mode', label: 'AE bias', type: 'select',
+    options: [[0,'Normal'], [1,'Highlights'], [2,'Shadows']] },
+  { key: 'awb_mode', label: 'WB mode', type: 'select',
+    options: [['auto','Auto'], ['manual','Manual']] },
+  { key: 'colour_gain_r', label: 'WB Red', type: 'number',
+    min: 0.5, max: 4.0, step: 0.05 },
+  { key: 'colour_gain_b', label: 'WB Blue', type: 'number',
+    min: 0.5, max: 4.0, step: 0.05 },
+  { key: 'noise_reduction_mode', label: 'NR mode', type: 'select',
+    options: [[0,'Off'], [3,'Minimal'], [1,'Fast'], [2,'High Q']] },
+  { key: 'stream_fps', label: 'Stream FPS', type: 'number',
+    min: 1, max: 10, step: 1 },
+  { key: 'brightness', label: 'Brightness', type: 'number',
+    min: -1, max: 1, step: 0.05 },
+  { key: 'contrast', label: 'Contrast', type: 'number',
+    min: 0, max: 3, step: 0.05 },
+  { key: 'saturation', label: 'Saturation', type: 'number',
+    min: 0, max: 2, step: 0.05 },
+  { key: 'sharpness', label: 'Sharpness', type: 'number',
+    min: 0, max: 2, step: 0.05 },
+];
+
+async function loadPresets() {
+  const res = await fetch('/api/presets');
+  if (!res.ok) throw new Error('presets fetch failed');
+  presets = await res.json();
+  renderPresetButtons();
+  populatePresetSelects(settings);
+  if (!document.getElementById('preset-editor').hidden) {
+    renderPresetEditor();
+  }
+}
+
+function renderPresetButtons() {
+  const grid = document.getElementById('preset-grid');
+  grid.innerHTML = '';
+  const names = Object.keys(presets);
+  if (!names.length) {
+    grid.innerHTML = '<div class="hint" style="padding:0">No presets yet.</div>';
+    return;
+  }
+  for (const name of names) {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = presets[name].label || name;
+    btn.onclick = () => applyPreset(name);
+    grid.appendChild(btn);
+  }
+}
 
 async function applyPreset(name) {
-  const preset = PRESETS[name];
-  if (!preset) return;
-  Object.assign(settings, preset);
-  Object.assign(pendingUpdate, preset);
+  const preset = presets[name];
+  if (!preset || !preset.values) return;
+  Object.assign(settings, preset.values);
+  Object.assign(pendingUpdate, preset.values);
   if (sendTimer) clearTimeout(sendTimer);
   renderControls(settings);
   await flushUpdate();
+}
+
+// ── Preset editor ─────────────────────────────────────────────────────────────
+
+function togglePresetEditor() {
+  const panel = document.getElementById('preset-editor');
+  const btn = document.getElementById('preset-edit-toggle');
+  const opening = panel.hidden;
+  panel.hidden = !opening;
+  btn.textContent = opening ? 'Hide editor ▴' : 'Edit presets ▾';
+  if (opening) renderPresetEditor();
+}
+
+function renderPresetEditor() {
+  const panel = document.getElementById('preset-editor');
+  panel.innerHTML = '';
+  for (const name of Object.keys(presets)) {
+    panel.appendChild(buildPresetCard(name, presets[name]));
+  }
+  panel.appendChild(buildAddPresetRow());
+}
+
+function buildPresetCard(name, preset) {
+  const card = document.createElement('div');
+  card.className = 'preset-card';
+  card.dataset.name = name;
+
+  const header = document.createElement('div');
+  header.className = 'preset-card-header';
+  const labelIn = document.createElement('input');
+  labelIn.type = 'text';
+  labelIn.value = preset.label || name;
+  labelIn.dataset.role = 'label';
+  labelIn.maxLength = 40;
+  const nameKey = document.createElement('span');
+  nameKey.className = 'name-key';
+  nameKey.textContent = name;
+  header.appendChild(labelIn);
+  header.appendChild(nameKey);
+  card.appendChild(header);
+
+  for (const f of PRESET_FIELDS) {
+    card.appendChild(buildPresetField(f, preset.values || {}));
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'preset-card-actions';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'primary';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => savePresetCard(card);
+  const delBtn = document.createElement('button');
+  delBtn.className = 'danger';
+  delBtn.textContent = 'Delete';
+  delBtn.onclick = () => deletePresetCard(card);
+  actions.appendChild(saveBtn);
+  actions.appendChild(delBtn);
+  card.appendChild(actions);
+
+  const status = document.createElement('div');
+  status.className = 'preset-card-status';
+  status.dataset.role = 'status';
+  card.appendChild(status);
+
+  return card;
+}
+
+function buildPresetField(field, values) {
+  const row = document.createElement('div');
+  row.className = 'preset-field';
+  row.dataset.key = field.key;
+  row.dataset.type = field.type;
+
+  const has = Object.prototype.hasOwnProperty.call(values, field.key);
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = has;
+  cb.dataset.role = 'enable';
+  row.appendChild(cb);
+
+  const lbl = document.createElement('label');
+  lbl.textContent = field.label;
+  row.appendChild(lbl);
+
+  let input;
+  if (field.type === 'select') {
+    input = document.createElement('select');
+    for (const [v, l] of field.options) {
+      const o = document.createElement('option');
+      o.value = String(v);
+      o.textContent = l;
+      input.appendChild(o);
+    }
+    input.value = has ? String(values[field.key]) : String(field.options[0][0]);
+  } else if (field.type === 'seconds') {
+    input = document.createElement('input');
+    input.type = 'number';
+    input.min = field.min;
+    input.max = field.max;
+    input.step = field.step;
+    input.value = has ? (values[field.key] / 1_000_000) : 1;
+  } else {
+    input = document.createElement('input');
+    input.type = 'number';
+    input.min = field.min;
+    input.max = field.max;
+    input.step = field.step;
+    input.value = has ? values[field.key] : field.min;
+  }
+  input.dataset.role = 'value';
+  input.disabled = !has;
+  cb.onchange = () => { input.disabled = !cb.checked; };
+  row.appendChild(input);
+
+  return row;
+}
+
+function readPresetCard(card) {
+  const name = card.dataset.name;
+  const label = card.querySelector('input[data-role=label]').value.trim() || name;
+  const values = {};
+  for (const row of card.querySelectorAll('.preset-field')) {
+    const cb = row.querySelector('input[data-role=enable]');
+    if (!cb.checked) continue;
+    const valueEl = row.querySelector('[data-role=value]');
+    const key = row.dataset.key;
+    const type = row.dataset.type;
+    if (type === 'select') {
+      const v = valueEl.value;
+      values[key] = (key === 'exposure_mode' || key === 'awb_mode') ? v : parseInt(v);
+    } else if (type === 'seconds') {
+      const sec = parseFloat(valueEl.value);
+      values[key] = Math.round(sec * 1_000_000);
+    } else {
+      const step = parseFloat(valueEl.step);
+      values[key] = (step >= 1) ? parseInt(valueEl.value) : parseFloat(valueEl.value);
+    }
+  }
+  return { name, label, values };
+}
+
+function setCardStatus(card, text, kind) {
+  const el = card.querySelector('[data-role=status]');
+  el.textContent = text;
+  el.className = 'preset-card-status' + (kind ? ' ' + kind : '');
+}
+
+async function savePresetCard(card) {
+  const { name, label, values } = readPresetCard(card);
+  setCardStatus(card, 'Saving…');
+  try {
+    const res = await fetch('/api/presets/' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, values }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setCardStatus(card, data.error || 'Save failed', 'error');
+      return;
+    }
+    presets[name] = data.preset;
+    setCardStatus(card, 'Saved', 'ok');
+    renderPresetButtons();
+    populatePresetSelects(settings);
+  } catch (e) {
+    setCardStatus(card, 'Network error', 'error');
+  }
+}
+
+async function deletePresetCard(card) {
+  const name = card.dataset.name;
+  const label = presets[name]?.label || name;
+  if (!confirm(`Delete preset "${label}"?`)) return;
+  setCardStatus(card, 'Deleting…');
+  try {
+    const res = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setCardStatus(card, data.error || 'Delete failed', 'error');
+      return;
+    }
+    delete presets[name];
+    renderPresetEditor();
+    renderPresetButtons();
+    populatePresetSelects(settings);
+  } catch (e) {
+    setCardStatus(card, 'Network error', 'error');
+  }
+}
+
+function buildAddPresetRow() {
+  const wrap = document.createElement('div');
+  wrap.id = 'preset-add-row';
+  const labelIn = document.createElement('input');
+  labelIn.type = 'text';
+  labelIn.placeholder = 'New preset label';
+  labelIn.maxLength = 40;
+  const btn = document.createElement('button');
+  btn.textContent = '+ Add';
+  btn.onclick = () => addPreset(labelIn);
+  wrap.appendChild(labelIn);
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+function slugify(label) {
+  return label.toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32) || 'preset';
+}
+
+async function addPreset(labelInput) {
+  const label = labelInput.value.trim();
+  if (!label) { labelInput.focus(); return; }
+  let name = slugify(label);
+  // Ensure uniqueness by appending a numeric suffix if needed.
+  if (presets[name]) {
+    let n = 2;
+    while (presets[`${name}_${n}`]) n++;
+    name = `${name}_${n}`;
+  }
+  try {
+    const res = await fetch('/api/presets/' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, values: {} }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Create failed');
+      return;
+    }
+    presets[name] = data.preset;
+    labelInput.value = '';
+    renderPresetEditor();
+    renderPresetButtons();
+    populatePresetSelects(settings);
+  } catch (e) {
+    alert('Network error');
+  }
 }
 
 // ── Populate controls from settings object ────────────────────────────────────
@@ -330,20 +625,22 @@ function renderControls(s) {
 }
 
 function populatePresetSelects(s) {
-  const LABELS = { day:'Day Auto', night:'Night Auto', planets:'Planets', deepsky:'Deep Sky', trails:'Star Trails', longexp:'Long Exp 60s' };
-  for (const selId of ['day-preset-sel', 'night-preset-sel']) {
+  for (const [selId, key] of [
+    ['day-preset-sel', 'schedule_day_preset'],
+    ['night-preset-sel', 'schedule_night_preset'],
+  ]) {
     const sel = document.getElementById(selId);
-    if (!sel.options.length) {
-      Object.keys(PRESETS).forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = LABELS[name] || name;
-        sel.appendChild(opt);
-      });
+    if (!sel) continue;
+    const prev = s?.[key] ?? sel.value;
+    sel.innerHTML = '';
+    for (const name of Object.keys(presets)) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = presets[name].label || name;
+      sel.appendChild(opt);
     }
+    if (prev && presets[prev]) sel.value = prev;
   }
-  if (s.schedule_day_preset)   document.getElementById('day-preset-sel').value   = s.schedule_day_preset;
-  if (s.schedule_night_preset) document.getElementById('night-preset-sel').value = s.schedule_night_preset;
 }
 
 function setSliderVal(id, val, displayId) {
@@ -598,6 +895,9 @@ async function loadInfo() {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 async function init() {
+  try {
+    await loadPresets();
+  } catch (_) {}
   try {
     await loadSettings();
   } catch (e) {

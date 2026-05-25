@@ -46,6 +46,41 @@ DEFAULTS = {
     "schedule_sunset_offset": 30,    # minutes AFTER sunset → switch to night
     "schedule_sunrise_offset": 30,   # minutes BEFORE sunrise → switch back to day
     "schedule_override_until": 0,    # Unix timestamp; 0 = no override
+    # User-editable preset library. Each entry: {label, values}.  `values` is a
+    # dict of camera settings applied when the preset button is clicked or when
+    # the scheduler flips period.  Seeded with sensible defaults on first run.
+    "presets": {
+        "day":     {"label": "Day Auto",
+                    "values": {"exposure_mode": "auto", "awb_mode": "auto",
+                               "stream_fps": 10, "analogue_gain": 1.0,
+                               "noise_reduction_mode": 2, "exposure_value": 0.0,
+                               "ae_constraint_mode": 0}},
+        "night":   {"label": "Night Auto",
+                    "values": {"exposure_mode": "auto", "awb_mode": "auto",
+                               "stream_fps": 5, "analogue_gain": 4.0,
+                               "noise_reduction_mode": 1, "exposure_value": -0.75,
+                               "ae_constraint_mode": 1}},
+        "planets": {"label": "Planets",
+                    "values": {"exposure_mode": "manual", "awb_mode": "auto",
+                               "stream_fps": 10, "analogue_gain": 4.0,
+                               "noise_reduction_mode": 0, "exposure_time": 50_000,
+                               "colour_gain_r": 2.0, "colour_gain_b": 1.5}},
+        "deepsky": {"label": "Deep Sky",
+                    "values": {"exposure_mode": "manual", "awb_mode": "manual",
+                               "stream_fps": 1, "analogue_gain": 8.0,
+                               "noise_reduction_mode": 0, "exposure_time": 30_000_000,
+                               "colour_gain_r": 2.2, "colour_gain_b": 1.6}},
+        "trails":  {"label": "Star Trails",
+                    "values": {"exposure_mode": "manual", "awb_mode": "manual",
+                               "stream_fps": 1, "analogue_gain": 4.0,
+                               "noise_reduction_mode": 0, "exposure_time": 15_000_000,
+                               "colour_gain_r": 2.0, "colour_gain_b": 1.5}},
+        "longexp": {"label": "Long Exp 120s",
+                    "values": {"exposure_mode": "manual", "awb_mode": "manual",
+                               "stream_fps": 1, "analogue_gain": 16.0,
+                               "noise_reduction_mode": 0, "exposure_time": 120_000_000,
+                               "colour_gain_r": 2.2, "colour_gain_b": 1.6}},
+    },
 }
 
 

@@ -1,8 +1,10 @@
 import base64
+import copy
 import hashlib
 import hmac
 import io
 import json
+import re
 import socket
 import subprocess
 import uuid
@@ -665,8 +667,20 @@ def _fmt_exposure(us: int) -> str:
     return f"1/{denom}"
 
 
-_VALID_PRESETS = {"day", "night", "planets", "deepsky", "trails", "longexp"}
 _VALID_RESOLUTIONS = {(3840, 2160), (2560, 1440), (1920, 1080), (1280, 720)}
+
+# Keys a preset is allowed to set.  These are the camera-state knobs the user
+# may want to bake into a preset; settings outside this set (ports, resolution,
+# schedule, etc.) are intentionally rejected to keep presets focused on the
+# imaging pipeline.
+_PRESETABLE_KEYS = frozenset({
+    "exposure_mode", "exposure_time", "analogue_gain", "exposure_value",
+    "ae_constraint_mode", "awb_mode", "colour_gain_r", "colour_gain_b",
+    "noise_reduction_mode", "stream_fps",
+    "brightness", "contrast", "saturation", "sharpness",
+})
+
+_PRESET_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
 
 
 def _validate_settings(data: dict):
@@ -724,8 +738,9 @@ def _validate_settings(data: dict):
             elif k == "longitude":
                 out[k] = max(-180.0, min(180.0, float(v)))
             elif k in ("schedule_day_preset", "schedule_night_preset"):
-                if v not in _VALID_PRESETS:
-                    raise ValueError(f"{k} must be one of {_VALID_PRESETS}")
+                valid = set(config.get("presets", {}).keys())
+                if v not in valid:
+                    raise ValueError(f"{k} must be one of {sorted(valid)}")
                 out[k] = v
             elif k in ("schedule_sunset_offset", "schedule_sunrise_offset"):
                 out[k] = max(-120, min(120, int(v)))
@@ -819,6 +834,62 @@ def post_schedule_override():
         scheduler.clear_override()
     else:
         return jsonify({"error": "invalid action"}), 400
+    return jsonify({"ok": True})
+
+
+@app.route("/api/presets", methods=["GET"])
+def get_presets():
+    return jsonify(config.get("presets", {}))
+
+
+@app.route("/api/presets/<name>", methods=["PUT"])
+def put_preset(name):
+    if not _PRESET_NAME_RE.match(name):
+        return jsonify({"error": "name must match [a-zA-Z0-9_-]{1,32}"}), 400
+    data = request.json
+    if not isinstance(data, dict):
+        return jsonify({"error": "body must be a JSON object"}), 400
+
+    label = data.get("label", name)
+    if not isinstance(label, str) or not (1 <= len(label) <= 40):
+        return jsonify({"error": "label must be a string of 1-40 chars"}), 400
+
+    values = data.get("values", {})
+    if not isinstance(values, dict):
+        return jsonify({"error": "values must be a JSON object"}), 400
+
+    bad = [k for k in values if k not in _PRESETABLE_KEYS]
+    if bad:
+        return jsonify({"error": f"keys not allowed in preset: {bad}"}), 400
+
+    try:
+        clean_values = _validate_settings(values)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    # Deep-copy so we don't mutate the DEFAULTS-shared dict on first run.
+    presets = copy.deepcopy(config.get("presets", {}))
+    presets[name] = {"label": label, "values": clean_values}
+    config.set("presets", presets)
+    return jsonify({"ok": True, "name": name, "preset": presets[name]})
+
+
+@app.route("/api/presets/<name>", methods=["DELETE"])
+def delete_preset(name):
+    presets = copy.deepcopy(config.get("presets", {}))
+    if name not in presets:
+        return jsonify({"error": "preset not found"}), 404
+    # Refuse to delete a preset the scheduler currently references — would
+    # leave the schedule pointing at a missing preset name.
+    day = config.get("schedule_day_preset")
+    night = config.get("schedule_night_preset")
+    if name in (day, night):
+        which = "day" if name == day else "night"
+        return jsonify({"error": f"preset is in use as the {which} schedule preset"}), 409
+    if len(presets) <= 1:
+        return jsonify({"error": "cannot delete the last preset"}), 409
+    del presets[name]
+    config.set("presets", presets)
     return jsonify({"ok": True})
 
 
